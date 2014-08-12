@@ -85,6 +85,30 @@ public class DbHelper {
 	public DbHelper(File configDir) throws ClassNotFoundException, FileNotFoundException, JSONException, SQLException, IOException, ParseException {
 		this(configDir, null);
 	}
+	
+	/**
+	 * register http basic auth credentials; set userDetails accordingly
+	 * if the given user is not already authenticated; store in database
+	 * if necessary; currently only nickName and fullName are both set 
+	 * to the string given by the user part in basic auth header;
+	 *  
+	 * @param userDetails
+	 * @param username
+	 * @param password
+	 * @throws SQLException
+	 */
+	public void registerBasicAuth(UserDetails userDetails, String username, String password) throws SQLException {
+		try {
+			userDetails = getUserDetails(userDetails);
+		} catch(OpenIdException e) {
+			userDetails.setNickName(username);
+			userDetails.setFullName(username);
+			userDetails.setFirstName("");
+			userDetails.setLastName("");
+			userDetails.setEmail("");
+			storeUserInfo(userDetails);
+		}
+	}
 
 	/**
 	 * Store user info (either update or insert)

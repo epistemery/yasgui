@@ -34,9 +34,9 @@ import java.text.ParseException;
 import java.util.logging.Logger;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.json.JSONException;
-
 
 import com.data2semantics.yasgui.client.services.OpenIdService;
 import com.data2semantics.yasgui.server.openid.OpenIdServlet;
@@ -56,11 +56,12 @@ public class OpenIdServiceImpl extends RemoteServiceServlet implements OpenIdSer
 	public LoginResult login(String appBaseUrl, boolean inDebugMode, String openIdURL) throws FetchException {
 		LOGGER.info("trying to log in for " + openIdURL);
 		HttpServletRequest request = getThreadLocalRequest();
+		HttpServletResponse response = getThreadLocalResponse();
 		LOGGER.info("we have the request. now pass it on to openid servlet");
 		LoginResult loginResult = new LoginResult();
 		try {
 			UserDetails userDetails;
-			userDetails = OpenIdServlet.getRequestUserInfo(new File(getServletContext().getRealPath("/")), request);
+			userDetails = OpenIdServlet.getRequestUserInfo(new File(getServletContext().getRealPath("/")), request, response);
 			if (userDetails.isLoggedIn()) {
 				loginResult.setIsLoggedIn(true);
 			} else {
@@ -97,7 +98,7 @@ public class OpenIdServiceImpl extends RemoteServiceServlet implements OpenIdSer
 	public UserDetails getCurrentUser() throws OpenIdException {
 		UserDetails details = new UserDetails();
 		try {
-			details = OpenIdServlet.getRequestUserInfo(new File(getServletContext().getRealPath("/")), getThreadLocalRequest());
+			details = OpenIdServlet.getRequestUserInfo(new File(getServletContext().getRealPath("/")), getThreadLocalRequest(), getThreadLocalResponse());
 		} catch (Exception e) {
 			//do nothing. just use empty user details
 			e.printStackTrace();

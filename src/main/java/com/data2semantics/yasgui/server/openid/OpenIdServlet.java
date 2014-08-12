@@ -32,6 +32,7 @@ import com.data2semantics.yasgui.shared.StaticConfig;
 import com.data2semantics.yasgui.shared.UserDetails;
 import com.google.gwt.user.client.rpc.RemoteService;
 
+import org.apache.commons.codec.binary.Base64;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.openid4java.OpenIDException;
@@ -119,6 +120,67 @@ public final class OpenIdServlet extends HttpServlet implements RemoteService {
 		}
 		return url;
 	}
+	
+	/**
+	 * provide http basic authentication feature using authorization header; no
+	 * password is checked here! we assume that the user is allowed to access
+	 * this resources with the given username, that is, the password is checked
+	 * elsewhere and the location to yasgui is protected so that only
+	 * authenticated users are authorized to access it
+	 * 
+	 * this is sort of a hack because we're abusing the openIdCookieName and
+	 * uniqueIdCookieName cookies to be able to track the user across a session; 
+	 * both cookies are set to the given username
+	 * 
+	 * authentication is only happening if the basic auth username and the
+	 * stored cookie value of openIdCookieName are different (this probably
+	 * means that the user has "logged out"); also a user is logged out
+	 * if the basic auth header is no longer present in the request
+	 * 
+	 * @param configDir
+	 * @param userDetails
+	 * @param request
+	 * @param response
+	 */
+	public static void doBasicAuth(File configDir, UserDetails userDetails, HttpServletRequest request, HttpServletResponse response) {
+		try {
+			String authHeader = request.getHeader("Authorization");
+			if (authHeader != null) {
+				String encodedValue = authHeader.split(" ")[1];
+				String decodedValue = new String(Base64.decodeBase64(encodedValue.getBytes()));
+				String[] splitValue = decodedValue.split(":");
+				
+				String uniqueId = splitValue[0]; 
+				String openId = uniqueId;
+				
+				if (HttpCookies.getCookieValue(request, openIdCookieName) != uniqueId) {
+					DbHelper db = new DbHelper(configDir, request);
+					
+					HttpCookies.resetCookie(request, response, uniqueIdCookieName);
+					HttpCookies.resetCookie(request, response, openIdCookieName);
+					HttpCookies.setCookie(request, response, openIdCookieName, openId);
+					HttpCookies.setCookie(request, response, uniqueIdCookieName, uniqueId);
+					
+					userDetails.setUniqueId(uniqueId);
+					userDetails.setOpenId(openId);
+					
+					db.registerBasicAuth(userDetails, splitValue[0], splitValue[1]);
+				}
+			} else if (authHeader == null && HttpCookies.getCookieValue(request, openIdCookieName) != null) {
+				// remove cookies because auth header is no longer present, log out;
+				// we can't use the logOut method because it is not static and we are 
+				// trying to avoid modifications to the existing code base as much 
+				// as possible
+				HttpCookies.resetCookie(request, response, openIdCookieName);
+				HttpCookies.resetCookie(request, response, uniqueIdCookieName);
+				userDetails.setUniqueId(null);
+				userDetails.setOpenId(null);
+			}
+		} catch (Exception e) {
+			System.out.println("error trying to authenticate through http basic auth header: ");
+			System.out.println(e.toString());
+		}
+	}
 
 	/**
 	 * Returns the unique cookie and the OpenID identifier saved on the user's
@@ -129,6 +191,7 @@ public final class OpenIdServlet extends HttpServlet implements RemoteService {
 	 * 
 	 * @param request
 	 *            The user's request to extract the cookies from.
+	 * @param response
 	 * @return Array containing { UniqueId, OpenID-Identifier }
 	 * @throws IOException 
 	 * @throws SQLException 
@@ -137,16 +200,20 @@ public final class OpenIdServlet extends HttpServlet implements RemoteService {
 	 * @throws ClassNotFoundException 
 	 * @throws ParseException 
 	 */
-	public static UserDetails getRequestUserInfo(File configDir, HttpServletRequest request) throws ClassNotFoundException, FileNotFoundException, JSONException, SQLException, IOException, ParseException {
+	public static UserDetails getRequestUserInfo(File configDir, HttpServletRequest request, HttpServletResponse response) throws ClassNotFoundException, FileNotFoundException, JSONException, SQLException, IOException, ParseException {
 		UserDetails userDetails = new UserDetails();
 		userDetails.setOpenId(HttpCookies.getCookieValue(request, openIdCookieName));
 		userDetails.setUniqueId(HttpCookies.getCookieValue(request, uniqueIdCookieName));
+		
+		// authenticate via basic auth if authorization header is present;
+		// if not, we still provide the open id auth feature
+		doBasicAuth(configDir, userDetails, request, response);
+		
 		if (userDetails.getOpenId() != null && userDetails.getUniqueId() != null) {
 			//get more info
 			DbHelper db = new DbHelper(configDir, request);
 			userDetails = db.getUserDetails(userDetails);
 		}
-		
 		
 		return userDetails;
 	}
